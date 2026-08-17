@@ -53,8 +53,9 @@ export function applyAvantPortal() {
   const transfer = ease(map(p, 0.06, 0.7));
   const copy = 1 - ease(map(p, 0, 0.18));
 
-  const line = menuOpen ? 0 : heroLineIn * heroLineOut;
-  const shown = transfer;
+  const onHome = window.location.pathname === "/";
+  const line = menuOpen || !onHome ? 0 : heroLineIn * heroLineOut;
+  const shown = onHome ? transfer : 1;
   const clipLeft = (1 - shown) * 100;
 
   root.style.setProperty("--hero-portal-line", String(line));

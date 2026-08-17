@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import Container from "@/components/Container";
 import Logo from "@/components/Logo";
 import MenuOverlay from "@/components/MenuOverlay";
@@ -12,15 +13,47 @@ import { applyAvantPortal, useAvantPortal } from "@/lib/avant-portal";
 export default function Header() {
   const { phase } = useIntro();
   const { section, goToHero } = useSectionLock();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuActive, setMenuActive] = useState(false);
   const [caseOpen, setCaseOpen] = useState(false);
   const [universe, setUniverse] = useState(false);
+  const [muted, setMuted] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuSoundRef = useRef<HTMLAudioElement | null>(null);
+  const mutedRef = useRef(false);
+  mutedRef.current = muted;
   const headerVisible = phase === "ready";
   const showBack = headerVisible && section === "work" && !menuActive;
 
   useAvantPortal();
+
+  useEffect(() => {
+    const audio = new Audio("/sounds/menu.m4a");
+    audio.preload = "auto";
+    audio.volume = 0.35;
+    menuSoundRef.current = audio;
+    return () => {
+      audio.pause();
+      menuSoundRef.current = null;
+    };
+  }, []);
+
+  const playMenuSound = () => {
+    if (mutedRef.current) return;
+    const audio = menuSoundRef.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
+  };
+
+  useEffect(() => {
+    try {
+      setMuted(window.localStorage.getItem("avant-menu-muted") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     const read = () => {
@@ -37,11 +70,15 @@ export default function Header() {
   }, []);
 
   const openMenu = () => {
+    if (menuOpen) return;
+    playMenuSound();
     setMenuOpen(true);
     setMenuActive(true);
   };
 
   const closeMenu = () => {
+    if (!menuOpen) return;
+    playMenuSound();
     setMenuOpen(false);
   };
 
@@ -76,7 +113,7 @@ export default function Header() {
           }`}
         >
         <Container
-          className={`flex items-center justify-between py-5 ${
+          className={`flex items-center justify-between py-[var(--page-px)] ${
             headerVisible ? "pointer-events-auto" : "pointer-events-none"
           }`}
         >
@@ -90,7 +127,17 @@ export default function Header() {
             >
               <Logo
                 suffix={
-                  caseOpen ? "Case" : universe || section === "work" ? "Explore" : undefined
+                  menuOpen
+                    ? "Menu"
+                    : caseOpen
+                      ? "Case"
+                      : pathname === "/about"
+                        ? "About"
+                        : pathname === "/contact"
+                          ? "Contact"
+                          : universe || section === "work"
+                            ? "Explore"
+                            : undefined
                 }
                 className={
                   menuActive && !inverted
@@ -216,8 +263,20 @@ export default function Header() {
       </header>
       <MenuOverlay
         open={menuOpen}
+        muted={muted}
         onClose={closeMenu}
         onCloseComplete={() => setMenuActive(false)}
+        onToggleMute={() => {
+          setMuted((current) => {
+            const next = !current;
+            try {
+              window.localStorage.setItem("avant-menu-muted", next ? "1" : "0");
+            } catch {
+              /* ignore */
+            }
+            return next;
+          });
+        }}
         buttonRef={menuButtonRef}
       />
     </>

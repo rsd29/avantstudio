@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import {
   CASE_STUDIES,
@@ -11,54 +11,88 @@ import {
 import { createBarrelMap } from "@/lib/barrel-map";
 import { useSectionLock } from "@/components/SectionLock";
 
-const COPIES = [-1, 0, 1] as const;
 const LERP = 0.1;
 const FRICTION = 0.965;
 const MIN_VELOCITY = 24;
 const SAMPLE_MS = 90;
 const CURVE_PAD = 22;
-const CLICK_DIST = 10;
+const PAN_SLOP = 12;
+const PAN_SLOP_TOUCH = 20;
 const WAVE_STAGGER = 0.18;
 const COLOR_DURATION = 0.85;
 const TILT_MAX = 3.5;
 const TILT_LERP = 0.05;
+const VIEW_PAD = 2;
 
 type View = "grid" | "flood" | "flatten" | "lining" | "detail" | "closing";
 
 type CellOrigin = {
-  copyX: number;
-  copyY: number;
   col: number;
   row: number;
 };
 
+type GridWindow = {
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
+};
+
+type GridCell = CellOrigin & { study: CaseStudy };
+
 function cellDistance(a: CellOrigin, b: CellOrigin) {
-  const dx = a.copyX * GRID_COLS + a.col - (b.copyX * GRID_COLS + b.col);
-  const dy = a.copyY * GRID_ROWS + a.row - (b.copyY * GRID_ROWS + b.row);
-  return Math.hypot(dx, dy);
+  return Math.hypot(a.col - b.col, a.row - b.row);
 }
 
-function originFromStudy(study: CaseStudy): CellOrigin {
-  const index = Math.max(
-    0,
-    CASE_STUDIES.findIndex((item) => item.id === study.id),
-  );
+function pickStudy() {
+  return CASE_STUDIES[Math.floor(Math.random() * CASE_STUDIES.length)];
+}
+
+function studyAt(field: Map<string, CaseStudy>, col: number, row: number) {
+  const key = `${col}:${row}`;
+  const existing = field.get(key);
+  if (existing) return existing;
+  const study = pickStudy();
+  field.set(key, study);
+  return study;
+}
+
+function gridWindow(x: number, y: number, w: number, h: number): GridWindow {
+  const cellW = Math.max(w / GRID_COLS, 1);
+  const cellH = Math.max(h / GRID_ROWS, 1);
   return {
-    copyX: 0,
-    copyY: 0,
-    col: index % GRID_COLS,
-    row: Math.floor(index / GRID_COLS),
+    minCol: Math.floor(-x / cellW) - VIEW_PAD,
+    maxCol: Math.ceil((w - x) / cellW) - 1 + VIEW_PAD,
+    minRow: Math.floor(-y / cellH) - VIEW_PAD,
+    maxRow: Math.ceil((h - y) / cellH) - 1 + VIEW_PAD,
   };
+}
+
+function buildCells(win: GridWindow, field: Map<string, CaseStudy>): GridCell[] {
+  const cells: GridCell[] = [];
+  for (let row = win.minRow; row <= win.maxRow; row++) {
+    for (let col = win.minCol; col <= win.maxCol; col++) {
+      cells.push({ col, row, study: studyAt(field, col, row) });
+    }
+  }
+  return cells;
+}
+
+function sameWindow(a: GridWindow, b: GridWindow) {
+  return (
+    a.minCol === b.minCol &&
+    a.maxCol === b.maxCol &&
+    a.minRow === b.minRow &&
+    a.maxRow === b.maxRow
+  );
 }
 
 function readOrigin(node: Element | null): CellOrigin | null {
   if (!node) return null;
-  const copyX = Number(node.getAttribute("data-copy-x"));
-  const copyY = Number(node.getAttribute("data-copy-y"));
   const col = Number(node.getAttribute("data-col"));
   const row = Number(node.getAttribute("data-row"));
-  if (![copyX, copyY, col, row].every(Number.isFinite)) return null;
-  return { copyX, copyY, col, row };
+  if (![col, row].every(Number.isFinite)) return null;
+  return { col, row };
 }
 
 function floodWait() {
@@ -66,14 +100,12 @@ function floodWait() {
 }
 
 function cellOnScreen(
-  copyX: number,
-  copyY: number,
   col: number,
   row: number,
   layout: { w: number; h: number; x: number; y: number },
 ) {
-  const left = (col / GRID_COLS + copyX) * layout.w + layout.x;
-  const top = (row / GRID_ROWS + copyY) * layout.h + layout.y;
+  const left = (col / GRID_COLS) * layout.w + layout.x;
+  const top = (row / GRID_ROWS) * layout.h + layout.y;
   const width = layout.w / GRID_COLS;
   const height = layout.h / GRID_ROWS;
   return (
@@ -135,11 +167,6 @@ function applyHeaderInk(ink?: string) {
   else root.style.removeProperty("--header-ink");
 }
 
-function wrapCentered(value: number, period: number) {
-  if (period <= 0) return 0;
-  return value - period * Math.round(value / period);
-}
-
 function damp(current: number, target: number, lerp: number, dt: number) {
   const alpha = 1 - (1 - lerp) ** (dt * 60);
   return current + (target - current) * alpha;
@@ -167,6 +194,14 @@ export default function CaseStudies() {
   const pan = useRef({ x: 0, y: 0, tx: 0, ty: 0, vx: 0, vy: 0 });
   const tilt = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const dragging = useRef(false);
+  const gesture = useRef({
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    path: 0,
+    slop: PAN_SLOP,
+    panned: false,
+  });
   const samples = useRef<{ x: number; y: number; t: number }[]>([]);
   const reducedRef = useRef(false);
   const sizeRef = useRef({ w: 1, h: 1 });
@@ -178,6 +213,14 @@ export default function CaseStudies() {
   const [view, setView] = useState<View>("grid");
   const [selected, setSelected] = useState<CaseStudy | null>(null);
   const [origin, setOrigin] = useState<CellOrigin | null>(null);
+  const fieldRef = useRef(new Map<string, CaseStudy>());
+  const windowRef = useRef<GridWindow>({
+    minCol: -VIEW_PAD,
+    maxCol: GRID_COLS - 1 + VIEW_PAD,
+    minRow: -VIEW_PAD,
+    maxRow: GRID_ROWS - 1 + VIEW_PAD,
+  });
+  const [cells, setCells] = useState<GridCell[]>([]);
   const [showContent, setShowContent] = useState(false);
   const [revealLayout, setRevealLayout] = useState({ w: 1, h: 1, x: 0, y: 0 });
   const viewRef = useRef<View>("grid");
@@ -202,6 +245,10 @@ export default function CaseStudies() {
     };
   }, [view]);
   const panning = interactive && view === "grid";
+
+  useLayoutEffect(() => {
+    setCells(buildCells(windowRef.current, fieldRef.current));
+  }, []);
 
   useEffect(() => {
     setBarrelMap(createBarrelMap());
@@ -261,7 +308,7 @@ export default function CaseStudies() {
 
   const openStudy = useCallback((study: CaseStudy, nextOrigin?: CellOrigin | null) => {
     if (viewRef.current !== "grid") return;
-    const originCell = nextOrigin ?? originFromStudy(study);
+    const originCell = nextOrigin ?? { col: 0, row: 0 };
     timelineRef.current?.kill();
     pan.current.vx = 0;
     pan.current.vy = 0;
@@ -340,18 +387,20 @@ export default function CaseStudies() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
+    const syncGrid = () => {
+      const { w, h } = sizeRef.current;
+      const next = gridWindow(pan.current.x, pan.current.y, w, h);
+      if (sameWindow(windowRef.current, next)) return;
+      windowRef.current = next;
+      setCells(buildCells(next, fieldRef.current));
+    };
+
     const measure = () => {
       sizeRef.current = { w: root.clientWidth, h: root.clientHeight };
+      syncGrid();
     };
-    measure();
 
-    const wrapTargets = () => {
-      const { w, h } = sizeRef.current;
-      pan.current.x = wrapCentered(pan.current.x, w);
-      pan.current.y = wrapCentered(pan.current.y, h);
-      pan.current.tx = pan.current.x + wrapCentered(pan.current.tx - pan.current.x, w);
-      pan.current.ty = pan.current.y + wrapCentered(pan.current.ty - pan.current.y, h);
-    };
+    measure();
 
     const apply = () => {
       world.style.transform = `translate3d(${pan.current.x}px, ${pan.current.y}px, 0)`;
@@ -422,7 +471,7 @@ export default function CaseStudies() {
         tilt.current.ty = 0;
       }
 
-      wrapTargets();
+      syncGrid();
       apply();
       applyTilt();
     };
@@ -435,45 +484,37 @@ export default function CaseStudies() {
       }
     };
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (!interactiveRef.current) return;
-      if (event.button !== 0) return;
-      dragging.current = true;
-      pan.current.vx = 0;
-      pan.current.vy = 0;
-      pan.current.tx = pan.current.x;
-      pan.current.ty = pan.current.y;
-      samples.current = [{ x: event.clientX, y: event.clientY, t: performance.now() }];
-      root.setPointerCapture(event.pointerId);
-    };
-
-    const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType === "mouse") {
-        setTiltTarget(event.clientX, event.clientY);
+    const applyFlick = () => {
+      if (reducedRef.current) {
+        pan.current.vx = 0;
+        pan.current.vy = 0;
+        return;
       }
-      if (!dragging.current) return;
       const list = samples.current;
-      const prev = list[list.length - 1];
-      if (!prev) return;
-      const dx = event.clientX - prev.x;
-      const dy = event.clientY - prev.y;
-      pan.current.x += dx;
-      pan.current.y += dy;
-      pan.current.tx = pan.current.x;
-      pan.current.ty = pan.current.y;
-      pushSample(event.clientX, event.clientY, performance.now());
-      wrapTargets();
-      apply();
+      const first = list[0];
+      const lastSample = list[list.length - 1];
+      if (!first || !lastSample) {
+        pan.current.vx = 0;
+        pan.current.vy = 0;
+        return;
+      }
+      const elapsed = Math.max((lastSample.t - first.t) / 1000, 0.016);
+      pan.current.vx = (lastSample.x - first.x) / elapsed;
+      pan.current.vy = (lastSample.y - first.y) / elapsed;
+      if (Math.hypot(pan.current.vx, pan.current.vy) < MIN_VELOCITY) {
+        pan.current.vx = 0;
+        pan.current.vy = 0;
+      }
     };
 
-    const onPointerLeave = () => {
-      if (dragging.current) return;
-      tilt.current.tx = 0;
-      tilt.current.ty = 0;
-    };
-
-    const onPointerUp = (event: PointerEvent) => {
+    const finishPointer = (event: PointerEvent, allowClick: boolean) => {
       if (!dragging.current) return;
+      if (
+        gesture.current.pointerId !== -1 &&
+        event.pointerId !== gesture.current.pointerId
+      ) {
+        return;
+      }
       dragging.current = false;
       if (root.hasPointerCapture(event.pointerId)) {
         root.releasePointerCapture(event.pointerId);
@@ -488,34 +529,96 @@ export default function CaseStudies() {
         tilt.current.tx = 0;
         tilt.current.ty = 0;
       }
+
+      const dist = Math.hypot(
+        event.clientX - gesture.current.startX,
+        event.clientY - gesture.current.startY,
+      );
+      const wasPan =
+        gesture.current.panned ||
+        dist >= gesture.current.slop ||
+        gesture.current.path >= gesture.current.slop;
+
+      if (!allowClick || wasPan || viewRef.current !== "grid") {
+        applyFlick();
+        return;
+      }
+
+      pan.current.vx = 0;
+      pan.current.vy = 0;
+      const hit = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest("[data-study-id]");
+      const id = hit?.getAttribute("data-study-id");
+      const study = CASE_STUDIES.find((item) => item.id === id);
+      if (study) openStudyRef.current(study, readOrigin(hit));
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!interactiveRef.current) return;
+      if (event.button !== 0) return;
+      dragging.current = true;
+      gesture.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        path: 0,
+        slop: event.pointerType === "touch" ? PAN_SLOP_TOUCH : PAN_SLOP,
+        panned: false,
+      };
+      pan.current.vx = 0;
+      pan.current.vy = 0;
+      pan.current.tx = pan.current.x;
+      pan.current.ty = pan.current.y;
+      samples.current = [
+        { x: event.clientX, y: event.clientY, t: performance.now() },
+      ];
+      root.setPointerCapture(event.pointerId);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") {
+        setTiltTarget(event.clientX, event.clientY);
+      }
+      if (!dragging.current) return;
+      if (event.pointerId !== gesture.current.pointerId) return;
       const list = samples.current;
-      const first = list[0];
-      const lastSample = list[list.length - 1];
-      if (!first || !lastSample) return;
-      const dist = Math.hypot(lastSample.x - first.x, lastSample.y - first.y);
-      if (dist < CLICK_DIST) {
-        pan.current.vx = 0;
-        pan.current.vy = 0;
-        const hit = document
-          .elementFromPoint(lastSample.x, lastSample.y)
-          ?.closest("[data-study-id]");
-        const id = hit?.getAttribute("data-study-id");
-        const study = CASE_STUDIES.find((item) => item.id === id);
-        if (study) openStudyRef.current(study, readOrigin(hit));
-        return;
+      const prev = list[list.length - 1];
+      if (!prev) return;
+      const dx = event.clientX - prev.x;
+      const dy = event.clientY - prev.y;
+      gesture.current.path += Math.hypot(dx, dy);
+      const fromStart = Math.hypot(
+        event.clientX - gesture.current.startX,
+        event.clientY - gesture.current.startY,
+      );
+      if (
+        fromStart >= gesture.current.slop ||
+        gesture.current.path >= gesture.current.slop
+      ) {
+        gesture.current.panned = true;
       }
-      if (reducedRef.current) {
-        pan.current.vx = 0;
-        pan.current.vy = 0;
-        return;
-      }
-      const elapsed = Math.max((lastSample.t - first.t) / 1000, 0.016);
-      pan.current.vx = (lastSample.x - first.x) / elapsed;
-      pan.current.vy = (lastSample.y - first.y) / elapsed;
-      if (Math.hypot(pan.current.vx, pan.current.vy) < MIN_VELOCITY) {
-        pan.current.vx = 0;
-        pan.current.vy = 0;
-      }
+      pan.current.x += dx;
+      pan.current.y += dy;
+      pan.current.tx = pan.current.x;
+      pan.current.ty = pan.current.y;
+      pushSample(event.clientX, event.clientY, performance.now());
+      syncGrid();
+      apply();
+    };
+
+    const onPointerLeave = () => {
+      if (dragging.current) return;
+      tilt.current.tx = 0;
+      tilt.current.ty = 0;
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      finishPointer(event, true);
+    };
+
+    const onPointerCancel = (event: PointerEvent) => {
+      finishPointer(event, false);
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -530,7 +633,7 @@ export default function CaseStudies() {
       if (reducedRef.current) {
         pan.current.x = pan.current.tx;
         pan.current.y = pan.current.ty;
-        wrapTargets();
+        syncGrid();
         apply();
       }
     };
@@ -540,8 +643,8 @@ export default function CaseStudies() {
     root.addEventListener("pointerdown", onPointerDown);
     root.addEventListener("pointermove", onPointerMove);
     root.addEventListener("pointerup", onPointerUp);
-    root.addEventListener("pointercancel", onPointerUp);
-    root.addEventListener("lostpointercapture", onPointerUp);
+    root.addEventListener("pointercancel", onPointerCancel);
+    root.addEventListener("lostpointercapture", onPointerCancel);
     root.addEventListener("pointerleave", onPointerLeave);
     root.addEventListener("wheel", onWheel, { passive: false });
 
@@ -552,8 +655,8 @@ export default function CaseStudies() {
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
       root.removeEventListener("pointerup", onPointerUp);
-      root.removeEventListener("pointercancel", onPointerUp);
-      root.removeEventListener("lostpointercapture", onPointerUp);
+      root.removeEventListener("pointercancel", onPointerCancel);
+      root.removeEventListener("lostpointercapture", onPointerCancel);
       root.removeEventListener("pointerleave", onPointerLeave);
       root.removeEventListener("wheel", onWheel);
     };
@@ -635,15 +738,9 @@ export default function CaseStudies() {
             height: `${(100 / (100 + CURVE_PAD * 2)) * 100}%`,
           }}
         >
-            {COPIES.map((copyY) =>
-              COPIES.map((copyX) =>
-                CASE_STUDIES.map((study, index) => {
-                  const col = index % GRID_COLS;
-                  const row = Math.floor(index / GRID_COLS);
-                  const cardKey = `${copyX}:${copyY}:${study.id}`;
-                  const dist = origin
-                    ? cellDistance(origin, { copyX, copyY, col, row })
-                    : 0;
+            {cells.map(({ col, row, study }) => {
+                  const cardKey = `${col}:${row}`;
+                  const dist = origin ? cellDistance(origin, { col, row }) : 0;
                   const waveDelay =
                     origin && selected && view !== "grid"
                       ? `${dist * WAVE_STAGGER}s`
@@ -653,15 +750,13 @@ export default function CaseStudies() {
                       key={cardKey}
                       type="button"
                       data-study-id={study.id}
-                      data-copy-x={copyX}
-                      data-copy-y={copyY}
                       data-col={col}
                       data-row={row}
                       aria-label={`${study.title}, ${study.category} ${study.year}`}
                       className="case-card absolute origin-center overflow-hidden"
                       style={{
-                        left: `${(col / GRID_COLS + copyX) * 100}%`,
-                        top: `${(row / GRID_ROWS + copyY) * 100}%`,
+                        left: `${(col / GRID_COLS) * 100}%`,
+                        top: `${(row / GRID_ROWS) * 100}%`,
                         width: `${100 / GRID_COLS}%`,
                         height: `${100 / GRID_ROWS}%`,
                         background: selected?.color ?? study.color,
@@ -685,9 +780,7 @@ export default function CaseStudies() {
                       }
                     />
                   );
-                }),
-              ),
-            )}
+                })}
         </div>
 
         {selected ? (
@@ -713,32 +806,18 @@ export default function CaseStudies() {
             </article>
             {view === "flood" || view === "flatten" || view === "lining" ? (
               <div className="pointer-events-none absolute inset-0 z-10">
-                {COPIES.map((copyY) =>
-                  COPIES.map((copyX) =>
-                    CASE_STUDIES.map((study, index) => {
-                      const col = index % GRID_COLS;
-                      const row = Math.floor(index / GRID_COLS);
-                      if (
-                        !cellOnScreen(
-                          copyX,
-                          copyY,
-                          col,
-                          row,
-                          revealLayout,
-                        )
-                      ) {
-                        return null;
-                      }
+                {cells.map(({ col, row, study }) => {
+                      if (!cellOnScreen(col, row, revealLayout)) return null;
                       const dist = origin
-                        ? cellDistance(origin, { copyX, copyY, col, row })
+                        ? cellDistance(origin, { col, row })
                         : 0;
                       return (
                         <div
-                          key={`${copyX}:${copyY}:${study.id}`}
+                          key={`${col}:${row}`}
                           className="case-shutter"
                           style={{
-                            left: `calc(${(col / GRID_COLS + copyX) * 100}% + ${revealLayout.x}px)`,
-                            top: `calc(${(row / GRID_ROWS + copyY) * 100}% + ${revealLayout.y}px)`,
+                            left: `calc(${(col / GRID_COLS) * 100}% + ${revealLayout.x}px)`,
+                            top: `calc(${(row / GRID_ROWS) * 100}% + ${revealLayout.y}px)`,
                             width: `${100 / GRID_COLS}%`,
                             height: `${100 / GRID_ROWS}%`,
                             background: study.color,
@@ -750,9 +829,7 @@ export default function CaseStudies() {
                           }}
                         />
                       );
-                    }),
-                  ),
-                )}
+                    })}
               </div>
             ) : null}
           </div>

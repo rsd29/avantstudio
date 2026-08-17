@@ -48,17 +48,27 @@ export default function Logo({
     shownRef.current = next;
     tweenRef.current?.kill();
 
-    current.textContent = from;
+    const incomingVisible = Number(gsap.getProperty(incoming, "opacity")) > 0.35;
+    if (incomingVisible) {
+      current.textContent = incoming.textContent;
+      gsap.set(current, {
+        yPercent: gsap.getProperty(incoming, "yPercent"),
+        opacity: gsap.getProperty(incoming, "opacity"),
+      });
+    } else if (current.textContent !== from) {
+      current.textContent = from;
+    }
+
     incoming.textContent = next;
-    gsap.set(current, { yPercent: 0, opacity: from ? 1 : 0 });
     gsap.set(incoming, { yPercent: 100, opacity: 0 });
     const width = Math.max(
-      from ? current.scrollWidth : 0,
+      current.scrollWidth || 0,
       next ? incoming.scrollWidth : 0,
     );
 
     const timeline = gsap.timeline({
-      defaults: { duration: 0.48, ease: "power2.inOut" },
+      defaults: { duration: 0.5, ease: "power2.inOut" },
+      overwrite: "auto",
       onComplete: () => {
         current.textContent = next;
         incoming.textContent = next;
@@ -69,7 +79,7 @@ export default function Logo({
     });
     timeline.to(current, { yPercent: -100, opacity: 0 }, 0);
     timeline.to(incoming, { yPercent: 0, opacity: next ? 1 : 0 }, 0);
-    timeline.to(viewport, { width, duration: 0.48, ease: "power2.inOut" }, 0);
+    timeline.to(viewport, { width, duration: 0.5, ease: "power2.inOut" }, 0);
     tweenRef.current = timeline;
 
     return () => {

@@ -14,7 +14,7 @@ import { usePathname } from "next/navigation";
 import { useLenis } from "lenis/react";
 import type { VirtualScrollData } from "lenis";
 import { useIntro } from "@/components/IntroProvider";
-import { applyWorkProgress } from "@/lib/avant-portal";
+import { applyAvantPortal, applyWorkProgress } from "@/lib/avant-portal";
 import gsap from "gsap";
 
 type Section = "hero" | "work";
@@ -185,8 +185,12 @@ export default function SectionLockProvider({
 
   useEffect(() => {
     if (!lenis) return;
+    if (!isHome && !menuOpen) {
+      lenis.start();
+      return;
+    }
     lenis.stop();
-  }, [lenis, phase, menuOpen, section]);
+  }, [lenis, phase, menuOpen, section, isHome]);
 
   useEffect(() => {
     if (!isHome) return;
@@ -220,6 +224,11 @@ export default function SectionLockProvider({
         setMode("hero");
         setProgress(0);
       }
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      delete document.body.dataset.sectionLock;
+      delete document.body.dataset.universe;
+      applyAvantPortal();
       return;
     }
 

@@ -207,7 +207,7 @@ export default function Hero() {
           <Container className="pb-8 md:pb-10">
             <div
               ref={taglineRef}
-              className="flex flex-col items-start gap-1.5"
+              className="flex flex-col items-start gap-1"
               style={
                 phase === "ready"
                   ? {
@@ -219,11 +219,14 @@ export default function Hero() {
                     : undefined
               }
             >
-              <h1 className="text-[clamp(0.7rem,2.1vw,1.5rem)] leading-none tracking-tight text-zinc-900">
-                We craft digital experiences that move brands forward.
+              <h1 className="whitespace-nowrap text-[clamp(0.7rem,2.05vw,1.55rem)] font-normal leading-none tracking-tight text-zinc-900">
+                Avant Studio is a collection of digital products, websites and ideas built with purpose.
               </h1>
-              <p className="text-[clamp(0.7rem,2.1vw,1.5rem)] leading-none tracking-tight text-zinc-900">
-                UX Designer Based in Melbourne
+              <p className="whitespace-nowrap text-[clamp(0.7rem,2.05vw,1.55rem)] font-normal leading-none tracking-tight text-zinc-900">
+                Grounded in UX, shaped by design and informed by years of building for the web.
+              </p>
+              <p className="mt-2 whitespace-nowrap text-[clamp(0.7rem,2.05vw,1.55rem)] font-normal leading-none tracking-tight text-zinc-900">
+                Based in Melbourne
               </p>
             </div>
           </Container>
