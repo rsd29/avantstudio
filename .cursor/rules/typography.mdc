@@ -1,0 +1,11 @@
+---
+description: Site typography — DM Sans for UI; Baunk for the AVANT logo only
+alwaysApply: true
+---
+
+# Typography
+
+- **All website text must use DM Sans** (`font-sans` / `--font-dm-sans`), including body, headings, nav, buttons, and UI copy.
+- **Baunk** (`font-logo` / `--font-baunk`) is reserved for the **AVANT** brand logo / wordmark only.
+- Do not introduce Helvetica Now, other Google Fonts, system stacks, or extra typefaces.
+- Prefer Tailwind `font-sans` (default). Do not add competing `font-family` overrides unless updating the logo.

@@ -1,11 +1,28 @@
 "use client";
 
+import { useIntro } from "@/components/IntroProvider";
 import { ReactLenis, useLenis } from "lenis/react";
 import { useEffect, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
+
+function LenisIntroLock() {
+  const lenis = useLenis();
+  const { phase } = useIntro();
+
+  useEffect(() => {
+    if (!lenis) return;
+    if (phase === "ready") {
+      lenis.start();
+    } else {
+      lenis.stop();
+    }
+  }, [lenis, phase]);
+
+  return null;
+}
 
 function LenisGSAPConnector() {
   const lenis = useLenis();
@@ -62,6 +79,7 @@ export default function SmoothScroll({
       }}
     >
       <LenisGSAPConnector />
+      <LenisIntroLock />
       {children}
     </ReactLenis>
   );

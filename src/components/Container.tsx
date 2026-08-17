@@ -6,7 +6,7 @@ export default function Container({
   className?: string;
 }) {
   return (
-    <div className={`w-full px-6 md:px-10 lg:px-12 ${className}`.trim()}>
+    <div className={`w-full px-[var(--page-px)] ${className}`.trim()}>
       {children}
     </div>
   );
