@@ -10,6 +10,11 @@
   --hero-copy-opacity: 1;
   --header-portal-line: 0;
   --header-clip-left: 100%;
+  --header-ink: #18181b;
+  --work-progress: 0;
+  --hero-curve: 0;
+  --hero-fade: 1;
+  --hero-pe: auto;
 }
 
 @media (min-width: 768px) {
@@ -48,6 +53,11 @@
 html {
   scrollbar-width: none;
   -ms-overflow-style: none;
+  overscroll-behavior: none;
+}
+
+body[data-section-lock="work"] {
+  overscroll-behavior: none;
 }
 
 html::-webkit-scrollbar,
@@ -69,6 +79,7 @@ select {
 
 .font-logo {
   letter-spacing: 0;
+  line-height: 0.74;
 }
 
 body {
@@ -80,6 +91,68 @@ body[data-intro="loading"] footer,
 body[data-intro="expanding"] footer {
   opacity: 0;
   pointer-events: none;
+}
+
+.case-card {
+  padding: 0;
+  border: 0;
+  text-align: left;
+  appearance: none;
+  transform: scale(1);
+  filter: saturate(0.75);
+  transition:
+    filter 150ms ease-out,
+    transform 2.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.85s ease,
+    color 0.75s ease,
+    opacity 0.7s ease;
+}
+
+.case-card:hover {
+  transform: scale(1.2);
+  filter: saturate(1);
+}
+
+.case-world.is-flooding .case-card,
+.case-world.is-flooding .case-card:hover {
+  transform: scale(1);
+  filter: saturate(1);
+}
+
+.case-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  box-shadow: inset 0 0 0 1px #fff;
+  mix-blend-mode: difference;
+  opacity: 0.8;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+.case-world.is-lining .case-card::after {
+  opacity: 0;
+}
+
+.case-shutter {
+  position: absolute;
+  overflow: hidden;
+  transition: opacity 0.85s ease;
+}
+
+.case-shutter::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px #fff;
+  mix-blend-mode: difference;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.case-study-ui {
+  scrollbar-gutter: stable;
 }
 
 html.cursor-none,

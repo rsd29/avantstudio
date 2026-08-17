@@ -1,28 +1,14 @@
 "use client";
 
-import { useIntro } from "@/components/IntroProvider";
+import SectionLockProvider, {
+  filterLenisVirtualScroll,
+} from "@/components/SectionLock";
 import { ReactLenis, useLenis } from "lenis/react";
 import { useEffect, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
-
-function LenisIntroLock() {
-  const lenis = useLenis();
-  const { phase } = useIntro();
-
-  useEffect(() => {
-    if (!lenis) return;
-    if (phase === "ready") {
-      lenis.start();
-    } else {
-      lenis.stop();
-    }
-  }, [lenis, phase]);
-
-  return null;
-}
 
 function LenisGSAPConnector() {
   const lenis = useLenis();
@@ -63,8 +49,15 @@ export default function SmoothScroll({
     setEnabled(!prefersReducedMotion);
   }, []);
 
+  const content = (
+    <SectionLockProvider>
+      {enabled ? <LenisGSAPConnector /> : null}
+      {children}
+    </SectionLockProvider>
+  );
+
   if (!enabled) {
-    return <>{children}</>;
+    return content;
   }
 
   return (
@@ -76,11 +69,10 @@ export default function SmoothScroll({
         duration: 1.2,
         smoothWheel: true,
         syncTouch: false,
+        virtualScroll: filterLenisVirtualScroll,
       }}
     >
-      <LenisGSAPConnector />
-      <LenisIntroLock />
-      {children}
+      {content}
     </ReactLenis>
   );
 }

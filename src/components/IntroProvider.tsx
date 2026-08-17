@@ -5,12 +5,11 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { usePathname } from "next/navigation";
-import gsap from "gsap";
+// import { usePathname } from "next/navigation";
+// import gsap from "gsap";
 
 export type IntroPhase = "loading" | "expanding" | "ready";
 
@@ -31,44 +30,46 @@ export function useIntro() {
 }
 
 export default function IntroProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const isHome = pathname === "/";
-  const [phase, setPhase] = useState<IntroPhase>(isHome ? "loading" : "ready");
-  const [progress, setProgress] = useState(isHome ? 0 : 100);
-  const played = useRef(!isHome);
+  // const pathname = usePathname();
+  // const isHome = pathname === "/";
+  // DEV: skip loading screen. Restore `isHome ? "loading" : "ready"` / `isHome ? 0 : 100`.
+  const [phase, setPhase] = useState<IntroPhase>("ready");
+  const [progress, setProgress] = useState(100);
+  // const played = useRef(true);
 
-  useEffect(() => {
-    if (!isHome) {
-      played.current = true;
-      setPhase("ready");
-      setProgress(100);
-      return;
-    }
-
-    if (played.current) {
-      setPhase("ready");
-      setProgress(100);
-      return;
-    }
-
-    const counter = { value: 0 };
-
-    const tween = gsap.to(counter, {
-      value: 100,
-      duration: 2,
-      ease: "power1.inOut",
-      onUpdate: () => setProgress(Math.round(counter.value)),
-      onComplete: () => {
-        played.current = true;
-        setProgress(100);
-        setPhase("expanding");
-      },
-    });
-
-    return () => {
-      tween.kill();
-    };
-  }, [isHome]);
+  // DEV: loading screen disabled. Uncomment to restore.
+  // useEffect(() => {
+  //   if (!isHome) {
+  //     played.current = true;
+  //     setPhase("ready");
+  //     setProgress(100);
+  //     return;
+  //   }
+  //
+  //   if (played.current) {
+  //     setPhase("ready");
+  //     setProgress(100);
+  //     return;
+  //   }
+  //
+  //   const counter = { value: 0 };
+  //
+  //   const tween = gsap.to(counter, {
+  //     value: 100,
+  //     duration: 2,
+  //     ease: "power1.inOut",
+  //     onUpdate: () => setProgress(Math.round(counter.value)),
+  //     onComplete: () => {
+  //       played.current = true;
+  //       setProgress(100);
+  //       setPhase("expanding");
+  //     },
+  //   });
+  //
+  //   return () => {
+  //     tween.kill();
+  //   };
+  // }, [isHome]);
 
   useEffect(() => {
     document.body.dataset.intro = phase;

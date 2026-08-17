@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { cropToInk } from "@/lib/crop-ink";
 
 export default function AvantWordmark() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,13 +13,10 @@ export default function AvantWordmark() {
 
     const fit = () => {
       text.style.fontSize = "100px";
-      text.style.height = "";
-      text.style.transform = "";
       const unscaledWidth = text.scrollWidth;
       if (unscaledWidth <= 0) return;
       const nextSize = (container.clientWidth / unscaledWidth) * 100;
       text.style.fontSize = `${nextSize}px`;
-      cropToInk(text);
     };
 
     fit();
@@ -44,7 +40,7 @@ export default function AvantWordmark() {
         id="avant-hero-mark"
         ref={textRef}
         aria-hidden="true"
-        className="font-logo block w-max max-w-none select-none whitespace-nowrap leading-none tracking-tighter text-zinc-900 uppercase"
+        className="font-logo block w-max max-w-none select-none whitespace-nowrap tracking-tighter text-zinc-900 uppercase"
       >
         AVANT
       </p>

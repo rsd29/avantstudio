@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import localFont from "next/font/local";
 import FluidTrail from "@/components/FluidTrail";
-import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import IntroProvider from "@/components/IntroProvider";
 import SmoothScroll from "@/components/SmoothScroll";
@@ -41,6 +40,11 @@ const baunk = localFont({
   src: "../fonts/Baunk.ttf",
   variable: "--font-baunk",
   display: "swap",
+  declarations: [
+    { prop: "ascent-override", value: "72%" },
+    { prop: "descent-override", value: "2%" },
+    { prop: "line-gap-override", value: "0%" },
+  ],
 });
 
 export const metadata: Metadata = {
@@ -64,7 +68,6 @@ export default function RootLayout({
           <SmoothScroll>
             <Header />
             <main className="flex flex-1 flex-col">{children}</main>
-            <Footer />
           </SmoothScroll>
         </IntroProvider>
         <FluidTrail />

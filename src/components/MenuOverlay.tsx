@@ -3,6 +3,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { useLenis } from "lenis/react";
 import gsap from "gsap";
+import { useSectionLock } from "@/components/SectionLock";
 
 const LINKS = [
   { label: "Work", href: "#work" },
@@ -15,6 +16,8 @@ const LINKS = [
 
 // Align with header top padding so the panel grows from the menu button
 const PANEL_TOP = "1.25rem";
+const PANEL_WIDTH = "min(22rem, calc(100% - 2 * var(--page-px)))";
+const PANEL_MAX_HEIGHT = `calc(100dvh - ${PANEL_TOP} - var(--page-px))`;
 
 type MenuOverlayProps = {
   open: boolean;
@@ -23,21 +26,21 @@ type MenuOverlayProps = {
   buttonRef: RefObject<HTMLButtonElement | null>;
 };
 
-function measureTargetRect() {
+function measureTargetRect(content: HTMLElement) {
   const probe = document.createElement("div");
   probe.setAttribute("aria-hidden", "true");
-  const wide = window.matchMedia("(min-width: 768px)").matches;
   Object.assign(probe.style, {
     position: "fixed",
     top: PANEL_TOP,
     right: "var(--page-px)",
-    bottom: "var(--page-px)",
-    width: wide
-      ? "min(22rem, calc(38% - var(--page-px)))"
-      : "min(20rem, calc(100% - 2 * var(--page-px)))",
+    width: PANEL_WIDTH,
+    maxHeight: PANEL_MAX_HEIGHT,
     visibility: "hidden",
     pointerEvents: "none",
+    boxSizing: "border-box",
+    border: "1px solid transparent",
   });
+  probe.appendChild(content.cloneNode(true));
   document.body.appendChild(probe);
   const rect = probe.getBoundingClientRect();
   probe.remove();
@@ -51,6 +54,7 @@ export default function MenuOverlay({
   buttonRef,
 }: MenuOverlayProps) {
   const lenis = useLenis();
+  const { section, goToWork } = useSectionLock();
   const rootRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -63,7 +67,6 @@ export default function MenuOverlay({
   useEffect(() => {
     if (!lenis) return;
     if (open) lenis.stop();
-    else lenis.start();
   }, [lenis, open]);
 
   useEffect(() => {
@@ -74,6 +77,26 @@ export default function MenuOverlay({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    const content = contentRef.current;
+    if (!panel || !content) return;
+
+    const onResize = () => {
+      const target = measureTargetRect(content);
+      gsap.set(panel, {
+        left: target.left,
+        top: target.top,
+        width: target.width,
+        height: target.height,
+      });
+    };
+
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [open]);
 
   useEffect(() => {
     const button = buttonRef.current;
@@ -89,7 +112,7 @@ export default function MenuOverlay({
       "(prefers-reduced-motion: reduce)",
     ).matches;
     const buttonRect = button.getBoundingClientRect();
-    const target = measureTargetRect();
+    const target = measureTargetRect(content);
     const links = content.querySelectorAll("li");
 
     const setFromButton = () => {
@@ -109,6 +132,7 @@ export default function MenuOverlay({
         width: target.width,
         height: target.height,
         opacity: 1,
+        overflow: "auto",
       });
     };
 
@@ -126,11 +150,16 @@ export default function MenuOverlay({
       }
 
       setFromButton();
+      gsap.set(panel, { overflow: "hidden" });
       gsap.set(backdrop, { opacity: 0 });
       gsap.set(content, { opacity: 1 });
       gsap.set(links, { opacity: 0, y: 14 });
 
-      const tl = gsap.timeline();
+      const tl = gsap.timeline({
+        onComplete: () => {
+          gsap.set(panel, { overflow: "auto" });
+        },
+      });
       timelineRef.current = tl;
 
       tl.to(
@@ -187,6 +216,7 @@ export default function MenuOverlay({
     }
 
     const closeButtonRect = button.getBoundingClientRect();
+    gsap.set(panel, { overflow: "hidden" });
     const tl = gsap.timeline({
       onComplete: finishClose,
     });
@@ -252,17 +282,25 @@ export default function MenuOverlay({
       >
         <ul
           ref={contentRef}
-          className="flex min-h-0 flex-1 flex-col justify-evenly px-8 pb-8 pt-14 md:px-10 md:pb-10 md:pt-16"
+          className="flex flex-col gap-6 px-8 pt-14 pb-8"
         >
           {LINKS.map((link, index) => (
             <li key={link.label}>
               <a
                 href={link.href}
                 tabIndex={open ? 0 : -1}
-                onClick={onClose}
+                onClick={(event) => {
+                  if (link.href === "#work") {
+                    event.preventDefault();
+                    onClose();
+                    if (section !== "work") goToWork();
+                    return;
+                  }
+                  onClose();
+                }}
                 className="group flex items-baseline justify-between text-white transition-colors hover:text-white/70"
               >
-                <span className="text-[clamp(1.4rem,2.8vw,2.1rem)] leading-none tracking-tight">
+                <span className="text-[1.875rem] leading-none tracking-tight">
                   {link.label}
                 </span>
                 <span className="text-xs tabular-nums tracking-wide text-white/40 transition-colors group-hover:text-white/60">

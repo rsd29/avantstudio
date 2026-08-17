@@ -14,19 +14,38 @@ function ease(t: number) {
   return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) ** 2;
 }
 
-export function getPortalProgress(scrollY = window.scrollY) {
-  const hero = document.getElementById("hero");
-  if (!hero) return 0;
-  const start = Math.max(hero.offsetHeight - window.innerHeight * 0.92, 0);
-  const span = window.innerHeight * 0.72;
-  return clamp((scrollY - start) / span);
+export function getWorkProgress() {
+  const raw = document.documentElement.style.getPropertyValue("--work-progress");
+  if (raw === "") {
+    const computed = getComputedStyle(document.documentElement).getPropertyValue(
+      "--work-progress",
+    );
+    const fromCss = Number(computed);
+    return Number.isFinite(fromCss) ? clamp(fromCss) : 0;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? clamp(value) : 0;
 }
 
-export function applyAvantPortal(scrollY = window.scrollY) {
+export function applyWorkProgress(progress: number) {
+  const p = clamp(progress);
+  const root = document.documentElement;
+  const curve = ease(map(p, 0, 0.58));
+  const fade = 1 - ease(map(p, 0.2, 1));
+  root.style.setProperty("--work-progress", String(p));
+  root.style.setProperty("--hero-curve", String(curve));
+  root.style.setProperty("--hero-fade", String(fade));
+  root.style.setProperty("--hero-pe", p > 0.92 ? "none" : "auto");
+  if (p > 0.42) document.body.dataset.universe = "true";
+  else delete document.body.dataset.universe;
+  applyAvantPortal();
+}
+
+export function applyAvantPortal() {
   const root = document.documentElement;
   const menuOpen = document.body.dataset.menu === "open";
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let p = getPortalProgress(scrollY);
+  let p = getWorkProgress();
   if (reduced) p = p > 0.5 ? 1 : 0;
 
   const heroLineIn = ease(map(p, 0, 0.1));
@@ -46,17 +65,15 @@ export function applyAvantPortal(scrollY = window.scrollY) {
 }
 
 export function useAvantPortal() {
-  useLenis(({ scroll }) => {
-    applyAvantPortal(scroll);
+  useLenis(() => {
+    applyAvantPortal();
   });
 
   useEffect(() => {
-    applyAvantPortal(window.scrollY);
-    const update = () => applyAvantPortal(window.scrollY);
-    window.addEventListener("scroll", update, { passive: true });
+    applyAvantPortal();
+    const update = () => applyAvantPortal();
     window.addEventListener("resize", update);
     return () => {
-      window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
   }, []);

@@ -11,7 +11,7 @@ const menuLinks = [
 function FooterWordmark() {
   return (
     <div className="px-[var(--page-px)]">
-      <p className="font-logo text-3xl leading-none tracking-normal text-zinc-900 uppercase md:text-4xl">
+      <p className="font-logo text-3xl tracking-normal text-zinc-900 uppercase md:text-4xl">
         AVANT
       </p>
     </div>

@@ -278,10 +278,15 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uDye;
+uniform float uThreshold;
+uniform float uBreakup;
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
 void main() {
-  vec3 dye = texture(uDye, vUv).rgb;
-  float a = clamp(max(max(dye.r, dye.g), dye.b), 0.0, 1.0);
-  a = smoothstep(0.02, 0.85, a);
+  float d = texture(uDye, vUv).r;
+  float n = hash(gl_FragCoord.xy);
+  float a = step(uThreshold + n * uBreakup, d);
   fragColor = vec4(vec3(a), a);
 }`;
 
@@ -448,7 +453,7 @@ export class FluidSim {
     const gl = this.gl;
     const aspect = gl.canvas.width / Math.max(gl.canvas.height, 1);
     this.blitSplat(this.velocity, x, y, dx * 0.55, dy * 0.55, 0, 0.00055, aspect);
-    const dye = 1.35 * amount;
+    const dye = 1.8 * amount;
     this.blitSplat(this.dye, x, y, dye, dye, dye, 0.00048, aspect);
   }
 
@@ -479,11 +484,21 @@ export class FluidSim {
     target.swap();
   }
 
-  step(dt: number) {
+  step(
+    dt: number,
+    opts: {
+      dyeDissipation?: number;
+      threshold?: number;
+      breakup?: number;
+    } = {},
+  ) {
     const gl = this.gl;
     dt = Math.min(dt, 0.033) * 0.72;
     const v = this.velocity;
     const texel = v.texel;
+    const dyeDissipation = opts.dyeDissipation ?? 0.96;
+    const threshold = opts.threshold ?? 0.14;
+    const breakup = opts.breakup ?? 0.05;
 
     bindProgram(gl, this.programs.curl);
     gl.viewport(0, 0, v.w, v.h);
@@ -573,7 +588,7 @@ export class FluidSim {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.dye.read.texture);
     gl.uniform2fv(this.uniforms.advect.uTexel, texel);
-    gl.uniform1f(this.uniforms.advect.uDissipation, 0.96);
+    gl.uniform1f(this.uniforms.advect.uDissipation, dyeDissipation);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     this.dye.swap();
 
@@ -585,6 +600,8 @@ export class FluidSim {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.dye.read.texture);
     gl.uniform1i(this.uniforms.display.uDye, 0);
+    gl.uniform1f(this.uniforms.display.uThreshold, threshold);
+    gl.uniform1f(this.uniforms.display.uBreakup, breakup);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
