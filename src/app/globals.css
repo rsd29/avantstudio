@@ -56,12 +56,20 @@ html {
   overscroll-behavior: none;
 }
 
+*,
+*::before,
+*::after {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 body[data-section-lock="work"] {
   overscroll-behavior: none;
 }
 
 html::-webkit-scrollbar,
-body::-webkit-scrollbar {
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -119,6 +127,13 @@ body[data-intro="expanding"] footer {
   filter: saturate(1);
 }
 
+.case-world.is-shuffling .case-card,
+.case-world.is-shuffling .case-card:hover {
+  filter: saturate(0.75);
+  pointer-events: none;
+  transition: none;
+}
+
 .case-card::after {
   content: "";
   position: absolute;
@@ -156,7 +171,14 @@ body[data-intro="expanding"] footer {
 }
 
 .case-study-ui {
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.case-study-ui::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 html.cursor-none,

@@ -12,7 +12,7 @@ import { applyAvantPortal, useAvantPortal } from "@/lib/avant-portal";
 
 export default function Header() {
   const { phase } = useIntro();
-  const { section, goToHero } = useSectionLock();
+  const { section, goToHero, shuffle } = useSectionLock();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuActive, setMenuActive] = useState(false);
@@ -160,7 +160,7 @@ export default function Header() {
               tabIndex={showBack ? 0 : -1}
               aria-hidden={!showBack}
               onClick={goToHero}
-              className={`group absolute right-full mr-3 flex size-9 items-center justify-center transition-opacity duration-300 ${
+              className={`group absolute right-full mr-[3.75rem] flex size-9 items-center justify-center transition-opacity duration-300 ${
                 showBack
                   ? "pointer-events-auto opacity-100"
                   : "pointer-events-none opacity-0"
@@ -192,6 +192,70 @@ export default function Header() {
               >
                 <path
                   d="M7 11.5V2.5M3.5 6 7 2.5 10.5 6"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label="Shuffle"
+              tabIndex={showBack ? 0 : -1}
+              aria-hidden={!showBack}
+              onClick={shuffle}
+              className={`group absolute right-full mr-3 flex size-9 items-center justify-center transition-opacity duration-300 ${
+                showBack
+                  ? "pointer-events-auto opacity-100"
+                  : "pointer-events-none opacity-0"
+              }`}
+            >
+              <svg
+                className="absolute inset-0 size-full"
+                viewBox="0 0 36 36"
+                fill="none"
+                aria-hidden="true"
+              >
+                <polygon
+                  points="5,0.5 35.5,0.5 35.5,31 31,35.5 0.5,35.5 0.5,5"
+                  className={`fill-transparent stroke-current transition-colors duration-[850ms] ease ${
+                    inverted ? "group-hover:fill-white" : "group-hover:fill-zinc-900"
+                  }`}
+                  strokeWidth="1"
+                />
+              </svg>
+              <svg
+                className={`relative z-10 text-current transition-colors duration-[850ms] ease ${
+                  inverted ? "group-hover:text-black" : "group-hover:text-white"
+                }`}
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M1 3.5h2.8c1.9 0 3 2.4 5.4 3.5"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinecap="square"
+                />
+                <path
+                  d="M1 10.5h2.8c1.9 0 3-2.4 5.4-3.5"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinecap="square"
+                />
+                <path
+                  d="M11.5 1.5 13 3.5 11.5 5.5M9.2 3.5H13"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                />
+                <path
+                  d="M11.5 8.5 13 10.5 11.5 12.5M9.2 10.5H13"
                   stroke="currentColor"
                   strokeWidth="1"
                   strokeLinecap="square"

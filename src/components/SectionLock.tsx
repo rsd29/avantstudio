@@ -24,14 +24,18 @@ type SectionLockValue = {
   section: Section;
   goToWork: () => void;
   goToHero: () => void;
+  shuffle: () => void;
   registerStudyCloser: (fn: (() => boolean) | null) => void;
+  registerShuffle: (fn: (() => void) | null) => void;
 };
 
 const SectionLockContext = createContext<SectionLockValue>({
   section: "hero",
   goToWork: () => {},
   goToHero: () => {},
+  shuffle: () => {},
   registerStudyCloser: () => {},
+  registerShuffle: () => {},
 });
 
 export function useSectionLock() {
@@ -75,9 +79,18 @@ export default function SectionLockProvider({
   const [section, setSection] = useState<Section>("hero");
   const [menuOpen, setMenuOpen] = useState(false);
   const studyCloserRef = useRef<(() => boolean) | null>(null);
+  const shuffleRef = useRef<(() => void) | null>(null);
 
   const registerStudyCloser = useCallback((fn: (() => boolean) | null) => {
     studyCloserRef.current = fn;
+  }, []);
+
+  const registerShuffle = useCallback((fn: (() => void) | null) => {
+    shuffleRef.current = fn;
+  }, []);
+
+  const shuffle = useCallback(() => {
+    shuffleRef.current?.();
   }, []);
 
   const modeRef = useRef<Mode>("hero");
@@ -290,7 +303,7 @@ export default function SectionLockProvider({
 
     virtualScrollFilter = ({ deltaY }) => {
       if (phaseRef.current !== "ready" || menuIsOpen()) return true;
-      if (caseStudyIsOpen()) return true;
+      if (caseStudyIsOpen()) return false;
       const mode = modeRef.current;
       if (mode === "hero") return deltaY <= 12;
       return false;
@@ -315,9 +328,11 @@ export default function SectionLockProvider({
       section,
       goToWork: () => goToWorkRef.current(),
       goToHero: () => goToHeroRef.current(),
+      shuffle,
       registerStudyCloser,
+      registerShuffle,
     }),
-    [section, registerStudyCloser],
+    [section, shuffle, registerStudyCloser, registerShuffle],
   );
 
   return (

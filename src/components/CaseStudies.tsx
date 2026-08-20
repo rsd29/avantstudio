@@ -23,6 +23,10 @@ const COLOR_DURATION = 0.85;
 const TILT_MAX = 3.5;
 const TILT_LERP = 0.05;
 const VIEW_PAD = 2;
+const SHUFFLE_COL_STAGGER = 0.1;
+const SHUFFLE_ROW_STAGGER = 0.1;
+const SHUFFLE_DURATION = 0.82;
+const SHUFFLE_HANDOFF = 0.42;
 
 type View = "grid" | "flood" | "flatten" | "lining" | "detail" | "closing";
 
@@ -44,8 +48,31 @@ function cellDistance(a: CellOrigin, b: CellOrigin) {
   return Math.hypot(a.col - b.col, a.row - b.row);
 }
 
-function pickStudy() {
-  return CASE_STUDIES[Math.floor(Math.random() * CASE_STUDIES.length)];
+function pickStudy(exceptId?: string) {
+  if (CASE_STUDIES.length < 2) return CASE_STUDIES[0];
+  let study = CASE_STUDIES[Math.floor(Math.random() * CASE_STUDIES.length)];
+  let guard = 0;
+  while (exceptId && study.id === exceptId && guard < 10) {
+    study = CASE_STUDIES[Math.floor(Math.random() * CASE_STUDIES.length)];
+    guard += 1;
+  }
+  return study;
+}
+
+function pickColumn(count: number, previous: CaseStudy[]) {
+  const next: CaseStudy[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    let study = pickStudy(previous[i]?.id);
+    let guard = 0;
+    while (used.has(study.id) && guard < 12 && CASE_STUDIES.length > used.size) {
+      study = pickStudy(previous[i]?.id);
+      guard += 1;
+    }
+    used.add(study.id);
+    next.push(study);
+  }
+  return next;
 }
 
 function studyAt(field: Map<string, CaseStudy>, col: number, row: number) {
@@ -87,6 +114,40 @@ function sameWindow(a: GridWindow, b: GridWindow) {
   );
 }
 
+function shuffleEase(t: number) {
+  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+}
+
+function applyStudyToCard(node: HTMLElement, study: CaseStudy) {
+  node.setAttribute("data-study-id", study.id);
+  node.style.background = study.color;
+  node.style.color = study.ink;
+  node.setAttribute(
+    "aria-label",
+    `${study.title}, ${study.category} ${study.year}`,
+  );
+}
+
+function groupVisible(nodes: HTMLElement[], axis: "col" | "row") {
+  const grouped = new Map<number, HTMLElement[]>();
+  for (const node of nodes) {
+    const col = Number(node.dataset.col);
+    const row = Number(node.dataset.row);
+    const id = axis === "col" ? col : row;
+    const list = grouped.get(id) ?? [];
+    list.push(node);
+    grouped.set(id, list);
+  }
+  for (const list of grouped.values()) {
+    list.sort((a, b) =>
+      axis === "col"
+        ? Number(a.dataset.row) - Number(b.dataset.row)
+        : Number(a.dataset.col) - Number(b.dataset.col),
+    );
+  }
+  return grouped;
+}
+
 function readOrigin(node: Element | null): CellOrigin | null {
   if (!node) return null;
   const col = Number(node.getAttribute("data-col"));
@@ -118,7 +179,7 @@ function cellOnScreen(
 
 function StudyCopy({ study }: { study: CaseStudy }) {
   return (
-    <div className="flex h-full w-full flex-col gap-10 px-[var(--page-px)] py-24 md:gap-14 md:py-28">
+    <div className="flex min-h-full w-full flex-col gap-10 px-[var(--page-px)] py-24 md:gap-14 md:py-28">
       <header className="flex flex-col gap-4">
         <p className="text-sm tracking-wide opacity-70">
           {study.category}
@@ -186,7 +247,7 @@ function wheelDelta(event: WheelEvent, size: { w: number; h: number }) {
 }
 
 export default function CaseStudies() {
-  const { section, registerStudyCloser } = useSectionLock();
+  const { section, registerStudyCloser, registerShuffle } = useSectionLock();
   const interactive = section === "work";
   const rootRef = useRef<HTMLElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -228,6 +289,11 @@ export default function CaseStudies() {
   const restCurveRef = useRef(56);
   const curveScaleRef = useRef(56);
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  const shuffleTweenRef = useRef<gsap.core.Timeline | null>(null);
+  const shuffleNestedRef = useRef<gsap.core.Timeline | null>(null);
+  const shufflingRef = useRef(false);
+  const shuffleGhostsRef = useRef<HTMLElement[]>([]);
+  const [shuffling, setShuffling] = useState(false);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   viewRef.current = view;
@@ -363,14 +429,206 @@ export default function CaseStudies() {
   const closeStudyRef = useRef(closeStudy);
   closeStudyRef.current = closeStudy;
 
+  const finishShuffle = useCallback(() => {
+    const world = worldRef.current;
+    shuffleGhostsRef.current.forEach((node) => node.remove());
+    shuffleGhostsRef.current = [];
+    shuffleNestedRef.current?.kill();
+    shuffleNestedRef.current = null;
+    if (world) {
+      gsap.set(world.querySelectorAll("[data-col]"), { clearProps: "transform" });
+    }
+    shuffleTweenRef.current = null;
+    shufflingRef.current = false;
+    setShuffling(false);
+  }, []);
+
+  const shuffleGrid = useCallback(() => {
+    if (!interactiveRef.current) return;
+    if (viewRef.current !== "grid") return;
+    if (shufflingRef.current) return;
+    const world = worldRef.current;
+    if (!world) return;
+
+    const { w, h } = sizeRef.current;
+    const layout = { w, h, x: pan.current.x, y: pan.current.y };
+    const cellW = Math.max(w / GRID_COLS, 1);
+    const cellH = Math.max(h / GRID_ROWS, 1);
+    const visible = [...world.querySelectorAll<HTMLElement>("[data-col]")].filter(
+      (node) => {
+        const col = Number(node.dataset.col);
+        const row = Number(node.dataset.row);
+        return (
+          Number.isFinite(col) &&
+          Number.isFinite(row) &&
+          cellOnScreen(col, row, layout)
+        );
+      },
+    );
+    if (!visible.length) return;
+
+    const groupedCols = groupVisible(visible, "col");
+    const groupedRows = groupVisible(visible, "row");
+    const cols = [...groupedCols.keys()].sort((a, b) => a - b);
+    const rows = [...groupedRows.keys()].sort((a, b) => a - b);
+    const field = fieldRef.current;
+    const shiftY =
+      cellH *
+      Math.max(
+        GRID_ROWS,
+        ...cols.map((col) => groupedCols.get(col)?.length ?? 0),
+      );
+    const shiftX =
+      cellW *
+      Math.max(
+        GRID_COLS,
+        ...rows.map((row) => groupedRows.get(row)?.length ?? 0),
+      );
+
+    const ghosts: HTMLElement[] = [];
+    shuffleGhostsRef.current = ghosts;
+
+    const swapStrip = (cards: HTMLElement[], next: CaseStudy[]) => {
+      cards.forEach((node, index) => {
+        const study = next[index];
+        field.set(`${node.dataset.col}:${node.dataset.row}`, study);
+        applyStudyToCard(node, study);
+      });
+    };
+
+    const makeStrip = (
+      cards: HTMLElement[],
+      next: CaseStudy[],
+      prop: "x" | "y",
+      distance: number,
+    ) => {
+      return cards.map((node, index) => {
+        const ghost = document.createElement("div");
+        ghost.className = node.className;
+        ghost.style.cssText = node.style.cssText;
+        ghost.style.pointerEvents = "none";
+        ghost.style.transform = "";
+        ghost.setAttribute("aria-hidden", "true");
+        applyStudyToCard(ghost, next[index]);
+        node.parentElement?.appendChild(ghost);
+        gsap.set(ghost, { [prop]: distance, force3D: true });
+        return ghost;
+      });
+    };
+
+    const addAxis = (
+      tl: gsap.core.Timeline,
+      ids: number[],
+      groups: Map<number, HTMLElement[]>,
+      prop: "x" | "y",
+      distance: number,
+      stagger: number,
+      at: number,
+    ) => {
+      ids.forEach((id, index) => {
+        const cards = groups.get(id) ?? [];
+        if (!cards.length) return;
+        const previous = cards.map(
+          (node) =>
+            field.get(`${node.dataset.col}:${node.dataset.row}`) ?? pickStudy(),
+        );
+        const next = pickColumn(cards.length, previous);
+        const strip = makeStrip(cards, next, prop, distance);
+        ghosts.push(...strip);
+        const start = at + index * stagger;
+        tl.to(
+          [...cards, ...strip],
+          {
+            [prop]: `-=${distance}`,
+            duration: SHUFFLE_DURATION,
+            ease: shuffleEase,
+            overwrite: "auto",
+            force3D: true,
+          },
+          start,
+        );
+        tl.add(() => {
+          swapStrip(cards, next);
+          gsap.set(cards, { [prop]: 0 });
+          strip.forEach((node) => node.remove());
+        }, start + SHUFFLE_DURATION);
+      });
+    };
+
+    const syncField = () => {
+      setCells(buildCells(windowRef.current, field));
+    };
+
+    shufflingRef.current = true;
+    setShuffling(true);
+    setHover(null);
+    pan.current.vx = 0;
+    pan.current.vy = 0;
+    pan.current.tx = pan.current.x;
+    pan.current.ty = pan.current.y;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      for (const node of visible) {
+        const key = `${node.dataset.col}:${node.dataset.row}`;
+        const study = pickStudy(field.get(key)?.id);
+        field.set(key, study);
+        applyStudyToCard(node, study);
+      }
+      syncField();
+      finishShuffle();
+      return;
+    }
+
+    const lastColStart =
+      Math.max(cols.length - 1, 0) * SHUFFLE_COL_STAGGER;
+    const verticalEnd = lastColStart + SHUFFLE_DURATION;
+    const horizontalStart = Math.max(lastColStart, verticalEnd - SHUFFLE_HANDOFF);
+    const horizontalDuration =
+      Math.max(rows.length - 1, 0) * SHUFFLE_ROW_STAGGER + SHUFFLE_DURATION;
+    const timeline = gsap.timeline({
+      onComplete: () => {
+        syncField();
+        finishShuffle();
+      },
+    });
+
+    addAxis(timeline, cols, groupedCols, "y", shiftY, SHUFFLE_COL_STAGGER, 0);
+    timeline.add(() => {
+      addAxis(
+        timeline,
+        rows,
+        groupedRows,
+        "x",
+        shiftX,
+        SHUFFLE_ROW_STAGGER,
+        timeline.time(),
+      );
+    }, horizontalStart);
+    timeline.to({}, { duration: horizontalDuration }, horizontalStart);
+
+    shuffleTweenRef.current = timeline;
+  }, [finishShuffle]);
+
+  const shuffleGridRef = useRef(shuffleGrid);
+  shuffleGridRef.current = shuffleGrid;
+
   useEffect(() => {
     registerStudyCloser(() => closeStudyRef.current());
     return () => registerStudyCloser(null);
   }, [registerStudyCloser]);
 
   useEffect(() => {
+    registerShuffle(() => shuffleGridRef.current());
+    return () => registerShuffle(null);
+  }, [registerShuffle]);
+
+  useEffect(() => {
     return () => {
       timelineRef.current?.kill();
+      shuffleTweenRef.current?.kill();
+      shuffleNestedRef.current?.kill();
+      shuffleGhostsRef.current.forEach((node) => node.remove());
       applyHeaderInk();
     };
   }, []);
@@ -388,6 +646,7 @@ export default function CaseStudies() {
     ).matches;
 
     const syncGrid = () => {
+      if (shufflingRef.current) return;
       const { w, h } = sizeRef.current;
       const next = gridWindow(pan.current.x, pan.current.y, w, h);
       if (sameWindow(windowRef.current, next)) return;
@@ -556,6 +815,8 @@ export default function CaseStudies() {
 
     const onPointerDown = (event: PointerEvent) => {
       if (!interactiveRef.current) return;
+      if (viewRef.current !== "grid") return;
+      if (shufflingRef.current) return;
       if (event.button !== 0) return;
       dragging.current = true;
       gesture.current = {
@@ -623,6 +884,8 @@ export default function CaseStudies() {
 
     const onWheel = (event: WheelEvent) => {
       if (!interactiveRef.current) return;
+      if (viewRef.current !== "grid") return;
+      if (shufflingRef.current) return;
       event.preventDefault();
       if (event.ctrlKey) return;
       const { dx, dy } = wheelDelta(event, sizeRef.current);
@@ -730,6 +993,8 @@ export default function CaseStudies() {
             view !== "grid" ? " is-flooding" : ""
           }${
             view === "lining" || view === "detail" ? " is-lining" : ""
+          }${
+            shuffling ? " is-shuffling" : ""
           }`}
           style={{
             left: `${(CURVE_PAD / (100 + CURVE_PAD * 2)) * 100}%`,
@@ -795,7 +1060,7 @@ export default function CaseStudies() {
             }}
           >
             <article
-              className="case-study-ui absolute inset-0 overflow-y-auto overscroll-contain bg-transparent transition-opacity duration-500 ease-out"
+              className="case-study-ui absolute inset-0 overflow-y-auto overscroll-y-contain bg-transparent transition-opacity duration-500 ease-out [touch-action:pan-y]"
               style={{
                 color: selected.ink,
                 opacity: view === "closing" && !showContent ? 0 : 1,
